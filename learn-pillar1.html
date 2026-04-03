@@ -123,43 +123,51 @@
       `).join('');
     }
 
-    function loadSession(i) {
-      currentSessionIndex = i;
-      const s = sessions[i];
+async function loadSessions() {
+  const listEl = document.getElementById('session-list');
+  listEl.innerHTML = "Fetching from Notion...";
 
-      document.getElementById('session-title').textContent = s.sessionTitle || s.microtopic;
-      document.getElementById('session-desc').innerHTML = `<strong>${s.source}</strong><br>${s.keyTakeaways}`;
+  try {
+    // Exact encoded version that matches your Notion select option
+    const pillarName = "Pillar 1 — Mental & Emotional Wellness";
+    const encodedPillar = encodeURIComponent(pillarName);
+    
+    const res = await fetch(`https://wellness-curriculum.eamiller1981.workers.dev/sessions?pillar=${encodedPillar}`);
+    
+    const data = await res.json();
 
-      document.getElementById('complete-btn').style.display = 'none';
-      document.getElementById('assessment-area').style.display = 'none';
-
-      if (player) player.destroy();
-
-      const videoId = s.youtubeURL.includes('v=') 
-        ? s.youtubeURL.split('v=')[1].split('&')[0] 
-        : s.youtubeURL.split('/').pop().split('?')[0];
-
-      player = new YT.Player('youtube-player', {
-        height: '390',
-        width: '640',
-        videoId: videoId,
-        playerVars: { autoplay: 1, start: s.startTime },
-        events: {
-          onReady: (event) => event.target.playVideo(),
-          onStateChange: (event) => {
-            if (event.data === YT.PlayerState.PLAYING) {
-              const timer = setInterval(() => {
-                if (player.getCurrentTime() >= s.endTime) {
-                  player.pauseVideo();
-                  clearInterval(timer);
-                  document.getElementById('complete-btn').style.display = 'block';
-                }
-              }, 800);
-            }
-          }
-        }
-      });
+    if (data.object === "error") {
+      listEl.innerHTML = `<div class="error">Notion Error: ${data.message}</div>`;
+      console.error("Notion Error:", data);
+      return;
     }
+
+    if (!data.results || !Array.isArray(data.results)) {
+      listEl.innerHTML = `<div class="error">No results returned from Notion</div>`;
+      return;
+    }
+
+    // Parse the data
+    sessions = data.results.map(page => {
+      const p = page.properties || {};
+      return {
+        microtopic: p.Microtopic?.title?.[0]?.plain_text || "Untitled",
+        sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
+        source: p.Source?.rich_text?.[0]?.plain_text || "",
+        youtubeURL: p["YouTube URL"]?.url || "",
+        startTime: parseInt(p["Start Time (sec)"]?.number) || 0,
+        endTime: parseInt(p["End Time (sec)"]?.number) || 1200,
+        keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
+        completed: false
+      };
+    });
+
+    renderSessions();
+  } catch (err) {
+    listEl.innerHTML = `<div class="error">Fetch failed: ${err.message}</div>`;
+    console.error(err);
+  }
+}
 
     function completeSession() {
       if (currentSessionIndex === null) return;
