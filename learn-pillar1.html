@@ -15,7 +15,6 @@
       border-radius: 8px; 
       cursor: pointer; 
       border: 1px solid #eee; 
-      transition: all 0.2s;
     }
     .session:hover { background: #f0f0f0; }
     .session.completed { background: #d4edda; border-color: #28a745; }
@@ -44,7 +43,7 @@
 
   <div id="main">
     <h1 id="session-title">Select a session from the left to begin</h1>
-    <div id="session-desc" style="margin-bottom:20px; color:#555; min-height:60px;"></div>
+    <div id="session-desc" style="margin-bottom:20px; color:#555;"></div>
     
     <div id="player-container">
       <div id="youtube-player"></div>
@@ -71,20 +70,15 @@
         const res = await fetch(`https://wellness-curriculum.eamiller1981.workers.dev/sessions?pillar=${encodeURIComponent(pillarName)}`);
         const data = await res.json();
 
-        if (data.object === "error") {
-          listEl.innerHTML = `<p style="color:red;">Worker Error: ${data.message}</p>`;
-          return;
-        }
-
         sessions = data.results.map(page => {
           const p = page.properties || {};
           return {
             microtopic: p.Microtopic?.title?.[0]?.plain_text || "Untitled",
-            sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
+            sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || p.Microtopic?.title?.[0]?.plain_text || "",
             source: p.Source?.rich_text?.[0]?.plain_text || "",
             youtubeURL: p["YouTube URL"]?.url || "",
             startTime: parseInt(p["Start Time (sec)"]?.number) || 0,
-            endTime: parseInt(p["End Time (sec)"]?.number) || 1200,
+            endTime: parseInt(p["End Time (sec)"]?.number) || 1500,
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
             completed: false
           };
@@ -92,7 +86,7 @@
 
         renderSessions();
       } catch (err) {
-        listEl.innerHTML = `<p style="color:red;">Failed to load: ${err.message}</p>`;
+        listEl.innerHTML = `<p style="color:red;">Load error: ${err.message}</p>`;
       }
     }
 
@@ -110,7 +104,7 @@
       const s = sessions[i];
 
       document.getElementById('session-title').textContent = s.sessionTitle || s.microtopic;
-      document.getElementById('session-desc').innerHTML = `<strong>${s.source}</strong><br>${s.keyTakeaways || ''}`;
+      document.getElementById('session-desc').innerHTML = `<strong>${s.source}</strong><br>${s.keyTakeaways}`;
 
       document.getElementById('complete-btn').style.display = 'none';
       document.getElementById('assessment-area').style.display = 'none';
@@ -125,13 +119,17 @@
         height: '390',
         width: '640',
         videoId: videoId,
-        playerVars: { autoplay: 1, start: s.startTime },
+        playerVars: { 
+          autoplay: 1, 
+          start: s.startTime,
+          modestbranding: 1
+        },
         events: {
           onReady: (e) => e.target.playVideo(),
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.PLAYING) {
               const timer = setInterval(() => {
-                if (player.getCurrentTime() >= s.endTime) {
+                if (player && player.getCurrentTime() >= s.endTime) {
                   player.pauseVideo();
                   clearInterval(timer);
                   document.getElementById('complete-btn').style.display = 'block';
@@ -152,20 +150,22 @@
       area.style.display = 'block';
       area.innerHTML = `
         <h3>Microassessment — ${sessions[currentSessionIndex].microtopic}</h3>
-        <p>Quick reflection:</p>
-        <textarea id="user-answer" rows="4" style="width:100%; margin:10px 0;" placeholder="What is one thing you'll apply from this session?"></textarea>
-        <button onclick="submitAssessment()">Submit</button>
+        <p>Quick reflection (this will be AI-scored later):</p>
+        <textarea id="user-answer" rows="4" style="width:100%; margin:10px 0;" placeholder="What stood out to you? How might you apply this?"></textarea>
+        <button onclick="submitAssessment()">Submit Reflection</button>
         <p id="feedback" style="margin-top:15px; color:#28a745;"></p>
       `;
     }
 
     function submitAssessment() {
-      document.getElementById('feedback').innerHTML = '✅ Reflection recorded!<br><small>AI scoring + adaptive lessons will go here in future versions.</small>';
+      document.getElementById('feedback').innerHTML = '✅ Reflection saved! (AI feedback + adaptive lessons will appear here in full version)';
     }
 
     function speakToApp() {
-      const query = prompt("Ask about Pillar 1 (e.g. 'Explain vagal tone'):");
-      if (query) alert("AI Coach would reply here with a synthesized recap.\n\nQuery: " + query);
+      const query = prompt("Ask the coach anything about Pillar 1:");
+      if (query) {
+        alert("🤖 AI Coach:\n\nThis would return a synthesized audio recap based on your approved resources.\n\nQuery: " + query);
+      }
     }
 
     window.onload = loadSessions;
