@@ -86,6 +86,26 @@
       font-size: 15px;
     }
     .ai-control-btn { background: #28a745; }
+
+    /* Wellness Coach Button */
+    .coach-btn {
+      width: 100%;
+      padding: 14px;
+      background: #6c757d;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .coach-btn:hover {
+      background: #5a6268;
+    }
   </style>
 </head>
 <body>
@@ -102,7 +122,9 @@
     <div id="session-list">Loading...</div>
     
     <div style="margin-top: 40px;">
-      <button onclick="speakToApp()">🎤 Speak to the App</button>
+      <button onclick="speakToApp()" class="coach-btn">
+        💬 Wellness Coach
+      </button>
     </div>
   </div>
 
@@ -208,7 +230,6 @@
       document.getElementById('complete-btn').style.display = 'none';
       document.getElementById('assessment-area').style.display = 'none';
 
-      // Reset player area
       document.getElementById('youtube-player').style.display = 'block';
       document.getElementById('ai-player').style.display = 'none';
 
@@ -221,7 +242,6 @@
         return;
       }
 
-      // YouTube player
       const videoId = s.youtubeURL.includes('v=') 
         ? s.youtubeURL.split('v=')[1].split('&')[0] 
         : s.youtubeURL.split('/').pop().split('?')[0];
@@ -251,35 +271,30 @@
       if ('speechSynthesis' in window) {
         if (aiUtterance) speechSynthesis.cancel();
 
-        aiUtterance = new SpeechSynthesisUtterance(s.aiContent || "This is a synthesized lesson based on approved sources.");
+        aiUtterance = new SpeechSynthesisUtterance(s.aiContent || "This is a synthesized lesson based on approved sources from your curriculum.");
         aiUtterance.rate = 0.95;
         aiUtterance.pitch = 1.0;
         aiUtterance.volume = 0.9;
 
         speechSynthesis.speak(aiUtterance);
 
-        // Switch button to pause
         document.getElementById('ai-play-btn').style.display = 'none';
         const pauseBtn = document.createElement('button');
         pauseBtn.className = 'ai-control-btn';
         pauseBtn.textContent = '⏸️ Pause';
-        pauseBtn.onclick = pauseAIPlayback;
+        pauseBtn.onclick = () => {
+          speechSynthesis.cancel();
+          document.getElementById('ai-play-btn').style.display = 'block';
+          pauseBtn.remove();
+        };
         document.getElementById('ai-player').appendChild(pauseBtn);
       } else {
         alert("Your browser does not support text-to-speech.");
       }
     }
 
-    function pauseAIPlayback() {
-      if ('speechSynthesis' in window) speechSynthesis.cancel();
-      document.getElementById('ai-play-btn').style.display = 'block';
-      // Remove pause button
-      const pauseBtn = document.querySelector('.ai-control-btn');
-      if (pauseBtn) pauseBtn.remove();
-    }
-
     function startProgressTracking(sessionId) {
-      console.log("Progress tracking started for", sessionId);
+      console.log("Progress tracking started");
     }
 
     function saveProgress(sessionId) {
@@ -309,8 +324,20 @@
     }
 
     function speakToApp() {
-      const query = prompt("Ask the coach anything about the current pillar:");
-      if (query) alert("AI Coach would provide a targeted recap here.");
+      const currentSession = currentSessionIndex !== null ? sessions[currentSessionIndex] : null;
+      let promptText = "Ask the Wellness Coach anything";
+      if (currentSession) {
+        promptText += ` (about "${currentSession.microtopic}")`;
+      }
+      const query = prompt(promptText);
+      if (query) {
+        let response = "💬 Wellness Coach:\n\n";
+        if (currentSession) {
+          response += `Regarding "${currentSession.microtopic}":\n`;
+        }
+        response += "This would be a synthesized, on-topic recap grounded in your approved resources.";
+        alert(response);
+      }
     }
 
     function switchPillar() {
