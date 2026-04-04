@@ -30,12 +30,13 @@
     .session-title { font-weight: 500; flex: 1; }
 
     .duration {
-      font-size: 0.8em;
+      font-size: 0.82em;
       color: #666;
       background: #f1f1f1;
       padding: 2px 8px;
       border-radius: 12px;
       margin-left: 8px;
+      white-space: nowrap;
     }
 
     .progress-container {
@@ -136,15 +137,15 @@
             id: sessionId,
             microtopic: p.Microtopic?.title?.[0]?.plain_text || 
                         p.Name?.title?.[0]?.plain_text || 
-                        p["Microtopic"]?.rich_text?.[0]?.plain_text || "Untitled",
+                        "Untitled",
             sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
-            source: p.Source?.rich_text?.[0]?.plain_text || p.Source?.title?.[0]?.plain_text || "",
+            source: p.Source?.rich_text?.[0]?.plain_text || "",
             youtubeURL: p["YouTube URL"]?.url || "",
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
             isAI: !p["YouTube URL"]?.url || p["YouTube URL"]?.url === "",
             completed: false,
             lastPosition: parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0,
-            duration: parseFloat(localStorage.getItem(`duration_${sessionId}`)) || 0
+            duration: parseFloat(p["Duration (min)"]?.number) || 0   // ← Reads directly from Notion
           };
         });
 
@@ -157,20 +158,27 @@
 
     function renderSessions() {
       const container = document.getElementById('session-list');
-      container.innerHTML = sessions.map((s, i) => `
-        <div class="session-card ${s.completed ? 'completed' : ''}" onclick="loadSession(${i})">
-          <div class="session-header">
-            <div class="session-title">${s.microtopic}</div>
-            ${s.duration ? `<div class="duration">${Math.floor(s.duration/60)} min</div>` : '<div class="duration">—</div>'}
+      container.innerHTML = sessions.map((s, i) => {
+        const percent = s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0;
+        const durationDisplay = s.duration ? 
+          (s.duration > 60 ? `${Math.floor(s.duration/60)}h ${s.duration % 60} min` : `${s.duration} min`) : 
+          (s.isAI ? "25 min" : "— min");
+
+        return `
+          <div class="session-card ${s.completed ? 'completed' : ''}" onclick="loadSession(${i})">
+            <div class="session-header">
+              <div class="session-title">${s.microtopic}</div>
+              <div class="duration">${durationDisplay}</div>
+            </div>
+            <div class="progress-container">
+              <div class="progress-fill" id="progress-fill-${s.id}" style="width: ${percent}%"></div>
+            </div>
+            <div class="progress-text" id="progress-text-${s.id}">
+              ${percent}% watched
+            </div>
           </div>
-          <div class="progress-container">
-            <div class="progress-fill" id="progress-fill-${s.id}" style="width: ${s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0}%"></div>
-          </div>
-          <div class="progress-text" id="progress-text-${s.id}">
-            ${s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0}% watched
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     function loadSession(i) {
@@ -189,14 +197,13 @@
 
       if (s.isAI) {
         document.getElementById('youtube-player').innerHTML = `
-          <div style="padding:60px 20px; text-align:center; color:#666;">
+          <div style="padding:60px 20px; text-align:center; color:#666; background:#f8f9fa; border-radius:8px;">
             <p><strong>AI-Generated Audio Lesson</strong></p>
             <p style="font-size:0.9em;">${s.microtopic}</p>
           </div>`;
         return;
       }
 
-      // YouTube player
       const videoId = s.youtubeURL.includes('v=') 
         ? s.youtubeURL.split('v=')[1].split('&')[0] 
         : s.youtubeURL.split('/').pop().split('?')[0];
@@ -214,14 +221,6 @@
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.PLAYING) startProgressTracking(s.id);
             else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) saveProgress(s.id);
-          },
-          onLoadedMetadata: (e) => {
-            const duration = player.getDuration();
-            if (duration) {
-              s.duration = duration;
-              localStorage.setItem(`duration_${s.id}`, duration);
-              renderSessions();
-            }
           }
         }
       });
@@ -230,10 +229,13 @@
     function playAILesson() {
       if (currentSessionIndex === null) return;
       const s = sessions[currentSessionIndex];
-      alert(`🎧 Now playing AI Audio Lesson:\n\n${s.microtopic}\n\n(This is a simulation. Real TTS will be integrated later.)`);
+      alert(`🎧 Playing AI Audio Lesson:\n\n${s.microtopic}\n\n(This is a simulation — real TTS integration coming soon.)`);
     }
 
-    function startProgressTracking(sessionId) { /* kept minimal */ console.log("Tracking progress for", sessionId); }
+    function startProgressTracking(sessionId) {
+      console.log("Progress tracking started for", sessionId);
+    }
+
     function saveProgress(sessionId) {
       if (!player || !sessionId) return;
       const currentTime = player.getCurrentTime();
