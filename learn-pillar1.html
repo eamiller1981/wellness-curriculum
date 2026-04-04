@@ -18,7 +18,11 @@
     }
     .session:hover { background: #f0f0f0; }
     .session.completed { background: #d4edda; border-color: #28a745; }
-    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; }
+    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; position: relative; }
+    .progress-container { margin-top: 10px; }
+    .progress-bar { height: 6px; background: #ddd; border-radius: 3px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #28a745; width: 0%; transition: width 0.3s; }
+    .progress-text { font-size: 0.85em; color: #666; margin-top: 4px; }
     .microassessment { 
       background: white; 
       border: 1px solid #ddd; 
@@ -33,7 +37,7 @@
 <body>
   <div id="sidebar">
     <h2>Pillar 1: Mental & Emotional Wellness</h2>
-    <p><small>Testing audio-first learning flow</small></p>
+    <p><small>Full episodes • Progress saved automatically</small></p>
     <div id="session-list"></div>
     
     <div style="margin-top: 40px;">
@@ -47,6 +51,10 @@
     
     <div id="player-container">
       <div id="youtube-player"></div>
+      <div class="progress-container" id="progress-container" style="display:none;">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-text" id="progress-text">0% watched • Resume enabled</div>
+      </div>
     </div>
 
     <button id="complete-btn" class="complete-btn" onclick="completeSession()" style="display:none;">
@@ -60,6 +68,7 @@
     let sessions = [];
     let currentSessionIndex = null;
     let player = null;
+    let progressInterval = null;
 
     async function loadSessions() {
       const listEl = document.getElementById('session-list');
@@ -73,14 +82,14 @@
         sessions = data.results.map(page => {
           const p = page.properties || {};
           return {
+            id: page.id,
             microtopic: p.Microtopic?.title?.[0]?.plain_text || "Untitled",
-            sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || p.Microtopic?.title?.[0]?.plain_text || "",
+            sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
             source: p.Source?.rich_text?.[0]?.plain_text || "",
             youtubeURL: p["YouTube URL"]?.url || "",
-            startTime: parseInt(p["Start Time (sec)"]?.number) || 0,
-            endTime: parseInt(p["End Time (sec)"]?.number) || 1500,
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
-            completed: false
+            completed: false,
+            lastPosition: parseFloat(localStorage.getItem(`progress_${page.id}`)) || 0
           };
         });
 
@@ -108,6 +117,7 @@
 
       document.getElementById('complete-btn').style.display = 'none';
       document.getElementById('assessment-area').style.display = 'none';
+      document.getElementById('progress-container').style.display = 'block';
 
       if (player) player.destroy();
 
@@ -119,30 +129,50 @@
         height: '390',
         width: '640',
         videoId: videoId,
-        playerVars: { 
-          autoplay: 1, 
-          start: s.startTime,
-          modestbranding: 1
-        },
+        playerVars: { autoplay: 1 },
         events: {
-          onReady: (e) => e.target.playVideo(),
+          onReady: (e) => {
+            if (s.lastPosition > 10) {
+              e.target.seekTo(s.lastPosition);
+            }
+            e.target.playVideo();
+          },
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.PLAYING) {
-              const timer = setInterval(() => {
-                if (player && player.getCurrentTime() >= s.endTime) {
-                  player.pauseVideo();
-                  clearInterval(timer);
-                  document.getElementById('complete-btn').style.display = 'block';
-                }
-              }, 1000);
+              startProgressTracking();
+            } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
+              saveProgress();
             }
           }
         }
       });
     }
 
+    function startProgressTracking() {
+      if (progressInterval) clearInterval(progressInterval);
+      progressInterval = setInterval(() => {
+        if (!player || !player.getCurrentTime) return;
+        const current = player.getCurrentTime();
+        const duration = player.getDuration();
+        if (duration > 0) {
+          const percent = Math.round((current / duration) * 100);
+          document.getElementById('progress-fill').style.width = percent + '%';
+          document.getElementById('progress-text').textContent = `${percent}% watched`;
+        }
+      }, 3000);
+    }
+
+    function saveProgress() {
+      if (!player || currentSessionIndex === null) return;
+      const currentTime = player.getCurrentTime();
+      const sessionId = sessions[currentSessionIndex].id;
+      localStorage.setItem(`progress_${sessionId}`, currentTime);
+      sessions[currentSessionIndex].lastPosition = currentTime;
+    }
+
     function completeSession() {
       if (currentSessionIndex === null) return;
+      saveProgress();
       sessions[currentSessionIndex].completed = true;
       renderSessions();
 
@@ -150,23 +180,24 @@
       area.style.display = 'block';
       area.innerHTML = `
         <h3>Microassessment — ${sessions[currentSessionIndex].microtopic}</h3>
-        <p>Quick reflection (this will be AI-scored later):</p>
-        <textarea id="user-answer" rows="4" style="width:100%; margin:10px 0;" placeholder="What stood out to you? How might you apply this?"></textarea>
+        <p>Focus on the core concepts from this episode:</p>
+        <textarea id="user-answer" rows="5" style="width:100%; margin:10px 0;" placeholder="What were the main ideas? How will you apply them?"></textarea>
         <button onclick="submitAssessment()">Submit Reflection</button>
         <p id="feedback" style="margin-top:15px; color:#28a745;"></p>
       `;
     }
 
     function submitAssessment() {
-      document.getElementById('feedback').innerHTML = '✅ Reflection saved! (AI feedback + adaptive lessons will appear here in full version)';
+      document.getElementById('feedback').innerHTML = '✅ Reflection saved. In the full version this would be AI-scored against the core learning objectives.';
     }
 
     function speakToApp() {
       const query = prompt("Ask the coach anything about Pillar 1:");
-      if (query) {
-        alert("🤖 AI Coach:\n\nThis would return a synthesized audio recap based on your approved resources.\n\nQuery: " + query);
-      }
+      if (query) alert("AI Coach would provide a targeted recap here (grounded in approved resources).");
     }
+
+    // Save progress when leaving the page
+    window.addEventListener('beforeunload', saveProgress);
 
     window.onload = loadSessions;
   </script>
