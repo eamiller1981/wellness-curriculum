@@ -61,10 +61,11 @@
 
     #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; min-height: 220px; position: relative; }
     .ai-player {
-      padding: 20px;
+      padding: 40px 20px;
       text-align: center;
-      color: white;
       background: #1a1a1a;
+      color: white;
+      border-radius: 8px;
     }
     .ai-lesson-btn, .ai-control-btn {
       background: #007bff;
@@ -74,6 +75,7 @@
       border-radius: 6px;
       margin: 8px;
       cursor: pointer;
+      font-size: 15px;
     }
     .ai-control-btn { background: #28a745; }
   </style>
@@ -104,9 +106,8 @@
       <div id="youtube-player"></div>
       <div id="ai-player" class="ai-player" style="display:none;">
         <p><strong>AI-Generated Audio Lesson</strong></p>
-        <p id="ai-title" style="font-size:0.9em; margin:10px 0;"></p>
-        <button id="ai-play-btn" class="ai-lesson-btn" onclick="toggleAIPlayback()">▶️ Play Audio Lesson</button>
-        <button id="ai-pause-btn" class="ai-control-btn" onclick="pauseAIPlayback()" style="display:none;">⏸️ Pause</button>
+        <p id="ai-title" style="font-size:0.9em; margin:15px 0;"></p>
+        <button id="ai-play-btn" class="ai-lesson-btn" onclick="playAILesson()">▶️ Play Audio Lesson</button>
       </div>
     </div>
 
@@ -121,7 +122,7 @@
     let sessions = [];
     let currentSessionIndex = null;
     let player = null;
-    let aiUtterance = null;   // For Web Speech API
+    let aiUtterance = null;
 
     const pillarObjectives = {
       "Pillar 1 — Mental & Emotional Wellness": "Upon completing this module, you will understand stress physiology, nervous system regulation, emotional resilience tools, and how to build cognitive and mood foundations for daily life.",
@@ -151,7 +152,7 @@
             youtubeURL: p["YouTube URL"]?.url || "",
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
             isAI: !p["YouTube URL"]?.url || p["YouTube URL"]?.url === "",
-            aiContent: p["AI Content"]?.rich_text?.[0]?.plain_text || "This is a synthesized lesson based on approved sources. In production this would be spoken aloud.",
+            aiContent: p["AI Content"]?.rich_text?.[0]?.plain_text || "This is a synthesized lesson based on approved sources from your curriculum.",
             completed: false,
             lastPosition: parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0,
             duration: parseFloat(p["Duration (min)"]?.number) || 25
@@ -198,14 +199,16 @@
       document.getElementById('complete-btn').style.display = 'none';
       document.getElementById('assessment-area').style.display = 'none';
 
-      // Show AI player or YouTube player
+      // Reset player area
+      document.getElementById('youtube-player').style.display = 'block';
+      document.getElementById('ai-player').style.display = 'none';
       document.getElementById('ai-lesson-btn').style.display = 'none';
-      document.getElementById('ai-player').style.display = s.isAI ? 'block' : 'none';
-      document.getElementById('youtube-player').style.display = s.isAI ? 'none' : 'block';
 
       if (player) player.destroy();
 
       if (s.isAI) {
+        document.getElementById('youtube-player').style.display = 'none';
+        document.getElementById('ai-player').style.display = 'block';
         document.getElementById('ai-title').textContent = s.microtopic;
         return;
       }
@@ -233,7 +236,6 @@
       });
     }
 
-    // AI Playback using Web Speech API
     function playAILesson() {
       if (currentSessionIndex === null) return;
       const s = sessions[currentSessionIndex];
@@ -247,31 +249,15 @@
         aiUtterance.volume = 0.9;
 
         speechSynthesis.speak(aiUtterance);
-        document.getElementById('ai-lesson-btn').style.display = 'none';
-        document.getElementById('ai-pause-btn').style.display = 'inline-block';
       } else {
-        alert("Your browser does not support text-to-speech. This would be real audio in production.");
+        alert("Your browser does not support text-to-speech.");
       }
     }
 
-    function pauseAIPlayback() {
-      if ('speechSynthesis' in window) {
-        speechSynthesis.cancel();
-        document.getElementById('ai-lesson-btn').style.display = 'block';
-        document.getElementById('ai-pause-btn').style.display = 'none';
-      }
+    function startProgressTracking(sessionId) {
+      console.log("Progress tracking started");
     }
 
-    function toggleAIPlayback() {
-      if (aiUtterance && speechSynthesis.speaking) {
-        pauseAIPlayback();
-      } else {
-        playAILesson();
-      }
-    }
-
-    // Progress functions (YouTube only)
-    function startProgressTracking(sessionId) { console.log("Tracking progress"); }
     function saveProgress(sessionId) {
       if (!player || !sessionId) return;
       const currentTime = player.getCurrentTime();
@@ -300,7 +286,7 @@
 
     function speakToApp() {
       const query = prompt("Ask the coach anything:");
-      if (query) alert("AI Coach would reply here with a synthesized recap.");
+      if (query) alert("AI Coach would reply here.");
     }
 
     function switchPillar() {
