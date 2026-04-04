@@ -7,22 +7,58 @@
   <script src="https://www.youtube.com/iframe_api"></script>
   <style>
     body { font-family: system-ui, sans-serif; margin: 0; display: flex; height: 100vh; background: #f8f9fa; }
-    #sidebar { width: 360px; background: white; border-right: 1px solid #ddd; overflow-y: auto; padding: 20px; }
+    #sidebar { width: 400px; background: white; border-right: 1px solid #ddd; overflow-y: auto; padding: 20px; }
     #main { flex: 1; padding: 30px; overflow-y: auto; }
-    .session { 
-      padding: 14px; 
-      margin-bottom: 8px; 
-      border-radius: 8px; 
-      cursor: pointer; 
-      border: 1px solid #eee; 
+    
+    .session-card {
+      padding: 14px;
+      margin-bottom: 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      border: 1px solid #eee;
+      transition: all 0.2s;
     }
-    .session:hover { background: #f0f0f0; }
-    .session.completed { background: #d4edda; border-color: #28a745; }
-    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; position: relative; }
-    .progress-container { margin-top: 10px; }
-    .progress-bar { height: 6px; background: #ddd; border-radius: 3px; overflow: hidden; }
-    .progress-fill { height: 100%; background: #28a745; width: 0%; transition: width 0.3s; }
-    .progress-text { font-size: 0.85em; color: #666; margin-top: 4px; }
+    .session-card:hover { background: #f8f9fa; }
+    .session-card.completed { background: #d4edda; border-color: #28a745; }
+
+    .session-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .session-title { font-weight: 500; }
+
+    .duration {
+      font-size: 0.8em;
+      color: #666;
+      background: #f1f1f1;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+
+    .progress-container {
+      height: 6px;
+      background: #eee;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #28a745;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+    .progress-text {
+      font-size: 0.8em;
+      color: #666;
+      margin-top: 4px;
+      text-align: right;
+    }
+
+    #main h1 { margin-top: 0; }
+    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; }
     .microassessment { 
       background: white; 
       border: 1px solid #ddd; 
@@ -51,10 +87,6 @@
     
     <div id="player-container">
       <div id="youtube-player"></div>
-      <div class="progress-container" id="progress-container" style="display:none;">
-        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-        <div class="progress-text" id="progress-text">0% watched • Resume enabled</div>
-      </div>
     </div>
 
     <button id="complete-btn" class="complete-btn" onclick="completeSession()" style="display:none;">
@@ -81,15 +113,29 @@
 
         sessions = data.results.map(page => {
           const p = page.properties || {};
+          const sessionId = page.id;
+          const savedProgress = parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0;
+          let duration = parseFloat(localStorage.getItem(`duration_${sessionId}`)) || 0;
+
+          // Format duration nicely
+          let durationStr = "";
+          if (duration > 0) {
+            const hours = Math.floor(duration / 3600);
+            const minutes = Math.floor((duration % 3600) / 60);
+            durationStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
+          }
+
           return {
-            id: page.id,
+            id: sessionId,
             microtopic: p.Microtopic?.title?.[0]?.plain_text || "Untitled",
             sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
             source: p.Source?.rich_text?.[0]?.plain_text || "",
             youtubeURL: p["YouTube URL"]?.url || "",
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
             completed: false,
-            lastPosition: parseFloat(localStorage.getItem(`progress_${page.id}`)) || 0
+            lastPosition: savedProgress,
+            duration: duration,
+            durationStr: durationStr
           };
         });
 
@@ -102,8 +148,17 @@
     function renderSessions() {
       const container = document.getElementById('session-list');
       container.innerHTML = sessions.map((s, i) => `
-        <div class="session ${s.completed ? 'completed' : ''}" onclick="loadSession(${i})">
-          ${s.completed ? '✅ ' : ''}${s.microtopic}
+        <div class="session-card ${s.completed ? 'completed' : ''}" onclick="loadSession(${i})">
+          <div class="session-header">
+            <div class="session-title">${s.microtopic}</div>
+            ${s.durationStr ? `<div class="duration">${s.durationStr}</div>` : ''}
+          </div>
+          <div class="progress-container">
+            <div class="progress-fill" id="progress-fill-${s.id}" style="width: ${s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0}%"></div>
+          </div>
+          <div class="progress-text" id="progress-text-${s.id}">
+            ${s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0}% watched
+          </div>
         </div>
       `).join('');
     }
@@ -117,7 +172,6 @@
 
       document.getElementById('complete-btn').style.display = 'none';
       document.getElementById('assessment-area').style.display = 'none';
-      document.getElementById('progress-container').style.display = 'block';
 
       if (player) player.destroy();
 
@@ -132,47 +186,61 @@
         playerVars: { autoplay: 1 },
         events: {
           onReady: (e) => {
-            if (s.lastPosition > 10) {
-              e.target.seekTo(s.lastPosition);
-            }
+            if (s.lastPosition > 30) e.target.seekTo(s.lastPosition);
             e.target.playVideo();
           },
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.PLAYING) {
-              startProgressTracking();
+              startProgressTracking(s.id);
             } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
-              saveProgress();
+              saveProgress(s.id);
+            }
+          },
+          onLoadedMetadata: (e) => {
+            const duration = player.getDuration();
+            if (duration && duration !== s.duration) {
+              s.duration = duration;
+              localStorage.setItem(`duration_${s.id}`, duration);
+              renderSessions(); // Refresh sidebar with new duration
             }
           }
         }
       });
     }
 
-    function startProgressTracking() {
+    function startProgressTracking(sessionId) {
       if (progressInterval) clearInterval(progressInterval);
+      
       progressInterval = setInterval(() => {
-        if (!player || !player.getCurrentTime) return;
+        if (!player || !player.getCurrentTime || !player.getDuration) return;
+        
         const current = player.getCurrentTime();
         const duration = player.getDuration();
+        
         if (duration > 0) {
           const percent = Math.round((current / duration) * 100);
-          document.getElementById('progress-fill').style.width = percent + '%';
-          document.getElementById('progress-text').textContent = `${percent}% watched`;
+          
+          const fill = document.getElementById(`progress-fill-${sessionId}`);
+          const text = document.getElementById(`progress-text-${sessionId}`);
+          
+          if (fill) fill.style.width = percent + '%';
+          if (text) text.textContent = `${percent}% watched`;
         }
-      }, 3000);
+      }, 4000);
     }
 
-    function saveProgress() {
-      if (!player || currentSessionIndex === null) return;
+    function saveProgress(sessionId) {
+      if (!player || !sessionId) return;
       const currentTime = player.getCurrentTime();
-      const sessionId = sessions[currentSessionIndex].id;
       localStorage.setItem(`progress_${sessionId}`, currentTime);
-      sessions[currentSessionIndex].lastPosition = currentTime;
+      
+      const session = sessions.find(s => s.id === sessionId);
+      if (session) session.lastPosition = currentTime;
     }
 
     function completeSession() {
       if (currentSessionIndex === null) return;
-      saveProgress();
+      saveProgress(sessions[currentSessionIndex].id);
       sessions[currentSessionIndex].completed = true;
       renderSessions();
 
@@ -180,24 +248,25 @@
       area.style.display = 'block';
       area.innerHTML = `
         <h3>Microassessment — ${sessions[currentSessionIndex].microtopic}</h3>
-        <p>Focus on the core concepts from this episode:</p>
-        <textarea id="user-answer" rows="5" style="width:100%; margin:10px 0;" placeholder="What were the main ideas? How will you apply them?"></textarea>
+        <p>Focus on the core ideas from this episode:</p>
+        <textarea id="user-answer" rows="5" style="width:100%; margin:10px 0;" placeholder="What were the key takeaways? How will you apply them?"></textarea>
         <button onclick="submitAssessment()">Submit Reflection</button>
         <p id="feedback" style="margin-top:15px; color:#28a745;"></p>
       `;
     }
 
     function submitAssessment() {
-      document.getElementById('feedback').innerHTML = '✅ Reflection saved. In the full version this would be AI-scored against the core learning objectives.';
+      document.getElementById('feedback').innerHTML = '✅ Reflection saved. AI scoring against core objectives coming soon.';
     }
 
     function speakToApp() {
       const query = prompt("Ask the coach anything about Pillar 1:");
-      if (query) alert("AI Coach would provide a targeted recap here (grounded in approved resources).");
+      if (query) alert("AI Coach would provide a targeted recap here.");
     }
 
-    // Save progress when leaving the page
-    window.addEventListener('beforeunload', saveProgress);
+    window.addEventListener('beforeunload', () => {
+      if (currentSessionIndex !== null) saveProgress(sessions[currentSessionIndex].id);
+    });
 
     window.onload = loadSessions;
   </script>
