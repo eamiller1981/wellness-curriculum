@@ -58,14 +58,16 @@
       text-align: right;
     }
 
-    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; }
-    .ai-lesson-btn { background: #007bff; color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; }
-    .microassessment { 
-      background: white; 
-      border: 1px solid #ddd; 
-      padding: 25px; 
-      border-radius: 12px; 
-      margin-top: 30px; 
+    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; min-height: 200px; }
+    .ai-lesson-btn { 
+      background: #007bff; 
+      color: white; 
+      border: none; 
+      padding: 14px; 
+      border-radius: 6px; 
+      width: 100%; 
+      margin-top: 10px; 
+      cursor: pointer; 
     }
   </style>
 </head>
@@ -73,14 +75,14 @@
   <div id="sidebar">
     <h2>Wellness OS Learning</h2>
     
-    <select id="pillar-select" onchange="switchPillar()" style="width:100%; padding:10px; margin-bottom:15px; border-radius:6px;">
+    <select id="pillar-select" onchange="switchPillar()" style="width:100%; padding:10px; margin-bottom:15px; border-radius:6px; font-size:15px;">
       <option value="Pillar 1 — Mental & Emotional Wellness">Pillar 1 — Mental & Emotional Wellness</option>
       <option value="Pillar 2 — Sleep, Recovery & Circadian Regulation">Pillar 2 — Sleep, Recovery & Circadian Regulation</option>
     </select>
 
     <div id="pillar-objective" style="margin-bottom:20px; font-size:0.95em; line-height:1.5; color:#444;"></div>
     
-    <div id="session-list"></div>
+    <div id="session-list">Loading...</div>
     
     <div style="margin-top: 40px;">
       <button onclick="speakToApp()">🎤 Speak to the App</button>
@@ -93,7 +95,7 @@
     
     <div id="player-container">
       <div id="youtube-player"></div>
-      <button id="ai-lesson-btn" class="ai-lesson-btn" onclick="playAILesson()" style="display:none; width:100%; margin-top:10px;">
+      <button id="ai-lesson-btn" class="ai-lesson-btn" onclick="playAILesson()" style="display:none;">
         ▶️ Play AI-Generated Audio Lesson
       </button>
     </div>
@@ -102,14 +104,13 @@
       ✅ Mark Session Complete & Take Microassessment
     </button>
     
-    <div id="assessment-area" class="microassessment" style="display:none;"></div>
+    <div id="assessment-area" class="microassessment" style="display:none; margin-top:20px;"></div>
   </div>
 
   <script>
     let sessions = [];
     let currentSessionIndex = null;
     let player = null;
-    let currentPillar = "Pillar 1 — Mental & Emotional Wellness";
 
     const pillarObjectives = {
       "Pillar 1 — Mental & Emotional Wellness": "Upon completing this module, you will understand stress physiology, nervous system regulation, emotional resilience tools, and how to build cognitive and mood foundations for daily life.",
@@ -130,14 +131,17 @@
         sessions = (data.results || []).map(page => {
           const p = page.properties || {};
           const sessionId = page.id;
+
           return {
             id: sessionId,
-            microtopic: p.Microtopic?.title?.[0]?.plain_text || "Untitled",
+            microtopic: p.Microtopic?.title?.[0]?.plain_text || 
+                        p.Name?.title?.[0]?.plain_text || 
+                        p["Microtopic"]?.rich_text?.[0]?.plain_text || "Untitled",
             sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
-            source: p.Source?.rich_text?.[0]?.plain_text || "",
+            source: p.Source?.rich_text?.[0]?.plain_text || p.Source?.title?.[0]?.plain_text || "",
             youtubeURL: p["YouTube URL"]?.url || "",
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
-            isAI: !p["YouTube URL"]?.url,   // Flag for AI-generated sessions
+            isAI: !p["YouTube URL"]?.url || p["YouTube URL"]?.url === "",
             completed: false,
             lastPosition: parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0,
             duration: parseFloat(localStorage.getItem(`duration_${sessionId}`)) || 0
@@ -147,6 +151,7 @@
         renderSessions();
       } catch (err) {
         listEl.innerHTML = `<p style="color:red;">Load error: ${err.message}</p>`;
+        console.error(err);
       }
     }
 
@@ -156,7 +161,7 @@
         <div class="session-card ${s.completed ? 'completed' : ''}" onclick="loadSession(${i})">
           <div class="session-header">
             <div class="session-title">${s.microtopic}</div>
-            ${s.duration ? `<div class="duration">${Math.floor(s.duration/60)} min</div>` : ''}
+            ${s.duration ? `<div class="duration">${Math.floor(s.duration/60)} min</div>` : '<div class="duration">—</div>'}
           </div>
           <div class="progress-container">
             <div class="progress-fill" id="progress-fill-${s.id}" style="width: ${s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0}%"></div>
@@ -173,21 +178,25 @@
       const s = sessions[i];
 
       document.getElementById('session-title').textContent = s.sessionTitle || s.microtopic;
-      document.getElementById('session-desc').innerHTML = `<strong>${s.source}</strong><br>${s.keyTakeaways}`;
+      document.getElementById('session-desc').innerHTML = `<strong>${s.source}</strong><br>${s.keyTakeaways || ''}`;
 
       document.getElementById('complete-btn').style.display = 'none';
       document.getElementById('assessment-area').style.display = 'none';
       document.getElementById('ai-lesson-btn').style.display = s.isAI ? 'block' : 'none';
 
       if (player) player.destroy();
+      document.getElementById('youtube-player').innerHTML = '';
 
       if (s.isAI) {
-        // AI session - no YouTube player
-        document.getElementById('youtube-player').innerHTML = '<p style="color:#666; text-align:center; padding:40px;">AI-Generated Audio Lesson<br><small>Click the button below to play</small></p>';
+        document.getElementById('youtube-player').innerHTML = `
+          <div style="padding:60px 20px; text-align:center; color:#666;">
+            <p><strong>AI-Generated Audio Lesson</strong></p>
+            <p style="font-size:0.9em;">${s.microtopic}</p>
+          </div>`;
         return;
       }
 
-      // YouTube session
+      // YouTube player
       const videoId = s.youtubeURL.includes('v=') 
         ? s.youtubeURL.split('v=')[1].split('&')[0] 
         : s.youtubeURL.split('/').pop().split('?')[0];
@@ -221,22 +230,14 @@
     function playAILesson() {
       if (currentSessionIndex === null) return;
       const s = sessions[currentSessionIndex];
-      alert(`🎧 Playing AI-Generated Lesson: ${s.microtopic}\n\n(This would be real TTS audio in production. Currently simulating with this message.)`);
-      // Future: Call backend for real TTS
+      alert(`🎧 Now playing AI Audio Lesson:\n\n${s.microtopic}\n\n(This is a simulation. Real TTS will be integrated later.)`);
     }
 
-    // Progress tracking functions (same as before)
-    function startProgressTracking(sessionId) {
-      // ... (kept from previous version - abbreviated here for space)
-      console.log("Progress tracking started for", sessionId);
-    }
-
+    function startProgressTracking(sessionId) { /* kept minimal */ console.log("Tracking progress for", sessionId); }
     function saveProgress(sessionId) {
       if (!player || !sessionId) return;
       const currentTime = player.getCurrentTime();
       localStorage.setItem(`progress_${sessionId}`, currentTime);
-      const session = sessions.find(s => s.id === sessionId);
-      if (session) session.lastPosition = currentTime;
     }
 
     function completeSession() {
@@ -249,7 +250,6 @@
       area.style.display = 'block';
       area.innerHTML = `
         <h3>Microassessment — ${sessions[currentSessionIndex].microtopic}</h3>
-        <p>Focus on the core ideas from this session:</p>
         <textarea id="user-answer" rows="5" style="width:100%; margin:10px 0;" placeholder="What were the key takeaways? How will you apply them?"></textarea>
         <button onclick="submitAssessment()">Submit Reflection</button>
         <p id="feedback" style="margin-top:15px; color:#28a745;"></p>
@@ -262,7 +262,7 @@
 
     function speakToApp() {
       const query = prompt("Ask the coach anything:");
-      if (query) alert("AI Coach would reply here with a synthesized recap.");
+      if (query) alert("AI Coach would reply here.");
     }
 
     function switchPillar() {
