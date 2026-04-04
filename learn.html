@@ -36,6 +36,7 @@
       padding: 2px 8px;
       border-radius: 12px;
       margin-left: 8px;
+      white-space: nowrap;
     }
 
     .progress-container {
@@ -49,6 +50,7 @@
       height: 100%;
       background: #28a745;
       width: 0%;
+      transition: width 0.4s ease;
     }
     .progress-text {
       font-size: 0.8em;
@@ -57,53 +59,79 @@
       text-align: right;
     }
 
-    #player-container { margin: 25px 0; background: #f0f0f0; border-radius: 8px; min-height: 240px; padding: 20px; text-align: center; }
-    .ai-lesson-btn {
+    #player-container { 
+      margin: 25px 0; 
+      background: #000; 
+      border-radius: 8px; 
+      overflow: hidden; 
+      min-height: 240px; 
+      position: relative; 
+    }
+    .ai-player {
+      padding: 40px 20px;
+      text-align: center;
+      background: #1a1a1a;
+      color: white;
+      border-radius: 8px;
+      min-height: 200px;
+    }
+    .ai-lesson-btn, .ai-control-btn {
       background: #007bff;
       color: white;
       border: none;
-      padding: 14px 24px;
+      padding: 12px 24px;
       border-radius: 6px;
-      margin-top: 15px;
+      margin: 8px;
       cursor: pointer;
-      font-size: 16px;
+      font-size: 15px;
     }
+    .ai-control-btn { background: #28a745; }
   </style>
 </head>
 <body>
   <div id="sidebar">
     <h2>Wellness OS Learning</h2>
     
-    <select id="pillar-select" onchange="switchPillar()" style="width:100%; padding:10px; margin:15px 0; border-radius:6px;">
+    <select id="pillar-select" onchange="switchPillar()" style="width:100%; padding:10px; margin-bottom:15px; border-radius:6px; font-size:15px;">
       <option value="Pillar 1 — Mental & Emotional Wellness">Pillar 1 — Mental & Emotional Wellness</option>
       <option value="Pillar 2 — Sleep / Recovery & Circadian Regulation">Pillar 2 — Sleep / Recovery & Circadian Regulation</option>
     </select>
 
     <div id="pillar-objective" style="margin-bottom:20px; font-size:0.95em; line-height:1.5; color:#444;"></div>
     
-    <div id="session-list">Loading sessions...</div>
+    <div id="session-list">Loading...</div>
+    
+    <div style="margin-top: 40px;">
+      <button onclick="speakToApp()">🎤 Speak to the App</button>
+    </div>
   </div>
 
   <div id="main">
-    <h1 id="session-title">Select a session from the left</h1>
-    <div id="session-desc" style="margin-bottom:20px; color:#555; min-height:60px;"></div>
+    <h1 id="session-title">Select a session from the left to begin</h1>
+    <div id="session-desc" style="margin-bottom:20px; color:#555;"></div>
     
     <div id="player-container">
-      <div id="content-area">
-        <p style="color:#666;">Select a session to load content</p>
+      <div id="youtube-player"></div>
+      <div id="ai-player" class="ai-player" style="display:none;">
+        <p><strong>AI-Generated Audio Lesson</strong></p>
+        <p id="ai-title" style="font-size:0.9em; margin:15px 0;"></p>
+        <button id="ai-play-btn" class="ai-lesson-btn" onclick="playAILesson()">▶️ Play Audio Lesson</button>
+        <button id="ai-pause-btn" class="ai-control-btn" onclick="pauseAIPlayback()" style="display:none;">⏸️ Pause</button>
       </div>
     </div>
 
-    <button id="complete-btn" onclick="completeSession()" style="display:none; background:#28a745; color:white; border:none; padding:12px 20px; border-radius:6px; font-weight:bold; margin-top:15px;">
-      ✅ Mark Complete & Microassessment
+    <button id="complete-btn" onclick="completeSession()" style="display:none; background:#28a745; color:white; border:none; padding:12px 20px; border-radius:6px; font-weight:bold;">
+      ✅ Mark Session Complete & Take Microassessment
     </button>
     
-    <div id="assessment-area" style="display:none; margin-top:20px; padding:20px; background:white; border:1px solid #ddd; border-radius:8px;"></div>
+    <div id="assessment-area" class="microassessment" style="display:none; margin-top:20px;"></div>
   </div>
 
   <script>
     let sessions = [];
     let currentSessionIndex = null;
+    let player = null;
+    let aiUtterance = null;
 
     const pillarObjectives = {
       "Pillar 1 — Mental & Emotional Wellness": "Upon completing this module, you will understand stress physiology, nervous system regulation, emotional resilience tools, and how to build cognitive and mood foundations for daily life.",
@@ -111,9 +139,11 @@
     };
 
     async function loadSessions(pillar) {
+      currentPillar = pillar;
       document.getElementById('pillar-objective').textContent = pillarObjectives[pillar] || "";
+
       const listEl = document.getElementById('session-list');
-      listEl.innerHTML = "Loading...";
+      listEl.innerHTML = "Loading sessions...";
 
       try {
         const res = await fetch(`https://wellness-curriculum.eamiller1981.workers.dev/sessions?pillar=${encodeURIComponent(pillar)}`);
@@ -121,40 +151,51 @@
 
         sessions = (data.results || []).map(page => {
           const p = page.properties || {};
+          const sessionId = page.id;
+
           return {
-            id: page.id,
+            id: sessionId,
             microtopic: p.Microtopic?.title?.[0]?.plain_text || p.Name?.title?.[0]?.plain_text || "Untitled",
             sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
             source: p.Source?.rich_text?.[0]?.plain_text || "",
             youtubeURL: p["YouTube URL"]?.url || "",
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
             isAI: !p["YouTube URL"]?.url || p["YouTube URL"]?.url === "",
-            aiContent: p["AI Content"]?.rich_text?.[0]?.plain_text || "This is a synthesized lesson based on approved sources.",
+            aiContent: p["AI Content"]?.rich_text?.[0]?.plain_text || "This is a synthesized lesson based on approved sources from your curriculum.",
             completed: false,
+            lastPosition: parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0,
             duration: parseFloat(p["Duration (min)"]?.number) || 25
           };
         });
 
         renderSessions();
       } catch (err) {
-        listEl.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
+        listEl.innerHTML = `<p style="color:red;">Load error: ${err.message}</p>`;
       }
     }
 
     function renderSessions() {
       const container = document.getElementById('session-list');
-      container.innerHTML = sessions.map((s, i) => `
-        <div class="session-card" onclick="loadSession(${i})">
-          <div class="session-header">
-            <div class="session-title">${s.microtopic}</div>
-            <div class="duration">${s.duration} min</div>
+      container.innerHTML = sessions.map((s, i) => {
+        const percent = s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0;
+        const durationDisplay = s.duration ? 
+          (s.duration >= 60 ? `${Math.floor(s.duration/60)}h ${s.duration % 60} min` : `${s.duration} min`) : "— min";
+
+        return `
+          <div class="session-card ${s.completed ? 'completed' : ''}" onclick="loadSession(${i})">
+            <div class="session-header">
+              <div class="session-title">${s.microtopic}</div>
+              <div class="duration">${durationDisplay}</div>
+            </div>
+            <div class="progress-container">
+              <div class="progress-fill" id="progress-fill-${s.id}" style="width: ${percent}%"></div>
+            </div>
+            <div class="progress-text" id="progress-text-${s.id}">
+              ${percent}% watched
+            </div>
           </div>
-          <div class="progress-container">
-            <div class="progress-fill" style="width: 0%"></div>
-          </div>
-          <div class="progress-text">0% watched</div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     function loadSession(i) {
@@ -164,55 +205,122 @@
       document.getElementById('session-title').textContent = s.sessionTitle || s.microtopic;
       document.getElementById('session-desc').innerHTML = `<strong>${s.source}</strong><br>${s.keyTakeaways || ''}`;
 
-      const container = document.getElementById('content-area');
+      document.getElementById('complete-btn').style.display = 'none';
+      document.getElementById('assessment-area').style.display = 'none';
+
+      // Reset player area
+      document.getElementById('youtube-player').style.display = 'block';
+      document.getElementById('ai-player').style.display = 'none';
+
+      if (player) player.destroy();
 
       if (s.isAI) {
-        container.innerHTML = `
-          <div style="padding:60px 20px; background:#f8f9fa; border-radius:8px; text-align:center;">
-            <p><strong>AI-Generated Audio Lesson</strong></p>
-            <p style="margin:15px 0;">${s.microtopic}</p>
-            <button onclick="playAILesson()" style="background:#007bff; color:white; border:none; padding:12px 24px; border-radius:6px; cursor:pointer;">▶️ Play AI Audio Lesson</button>
-          </div>`;
-      } else if (s.youtubeURL) {
-        const videoId = s.youtubeURL.includes('v=') 
-          ? s.youtubeURL.split('v=')[1].split('&')[0] 
-          : s.youtubeURL.split('/').pop().split('?')[0];
-
-        container.innerHTML = `<div id="youtube-player"></div>`;
-
-        new YT.Player('youtube-player', {
-          height: '390',
-          width: '640',
-          videoId: videoId,
-          playerVars: { autoplay: 1 }
-        });
+        document.getElementById('youtube-player').style.display = 'none';
+        document.getElementById('ai-player').style.display = 'block';
+        document.getElementById('ai-title').textContent = s.microtopic;
+        return;
       }
+
+      // YouTube player
+      const videoId = s.youtubeURL.includes('v=') 
+        ? s.youtubeURL.split('v=')[1].split('&')[0] 
+        : s.youtubeURL.split('/').pop().split('?')[0];
+
+      player = new YT.Player('youtube-player', {
+        height: '390',
+        width: '640',
+        videoId: videoId,
+        playerVars: { autoplay: 1 },
+        events: {
+          onReady: (e) => {
+            if (s.lastPosition > 30) e.target.seekTo(s.lastPosition);
+            e.target.playVideo();
+          },
+          onStateChange: (e) => {
+            if (e.data === YT.PlayerState.PLAYING) startProgressTracking(s.id);
+            else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) saveProgress(s.id);
+          }
+        }
+      });
     }
 
     function playAILesson() {
+      if (currentSessionIndex === null) return;
       const s = sessions[currentSessionIndex];
+
       if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(s.aiContent || "This is a synthesized lesson.");
-        utterance.rate = 0.95;
-        speechSynthesis.speak(utterance);
+        if (aiUtterance) speechSynthesis.cancel();
+
+        aiUtterance = new SpeechSynthesisUtterance(s.aiContent || "This is a synthesized lesson based on approved sources.");
+        aiUtterance.rate = 0.95;
+        aiUtterance.pitch = 1.0;
+        aiUtterance.volume = 0.9;
+
+        speechSynthesis.speak(aiUtterance);
+
+        // Switch button to pause
+        document.getElementById('ai-play-btn').style.display = 'none';
+        const pauseBtn = document.createElement('button');
+        pauseBtn.className = 'ai-control-btn';
+        pauseBtn.textContent = '⏸️ Pause';
+        pauseBtn.onclick = pauseAIPlayback;
+        document.getElementById('ai-player').appendChild(pauseBtn);
       } else {
-        alert("Browser TTS not supported.");
+        alert("Your browser does not support text-to-speech.");
       }
     }
 
+    function pauseAIPlayback() {
+      if ('speechSynthesis' in window) speechSynthesis.cancel();
+      document.getElementById('ai-play-btn').style.display = 'block';
+      // Remove pause button
+      const pauseBtn = document.querySelector('.ai-control-btn');
+      if (pauseBtn) pauseBtn.remove();
+    }
+
+    function startProgressTracking(sessionId) {
+      console.log("Progress tracking started for", sessionId);
+    }
+
+    function saveProgress(sessionId) {
+      if (!player || !sessionId) return;
+      const currentTime = player.getCurrentTime();
+      localStorage.setItem(`progress_${sessionId}`, currentTime);
+    }
+
     function completeSession() {
-      alert("Session marked complete. Microassessment would appear here.");
+      if (currentSessionIndex === null) return;
+      saveProgress(sessions[currentSessionIndex].id);
+      sessions[currentSessionIndex].completed = true;
+      renderSessions();
+
+      const area = document.getElementById('assessment-area');
+      area.style.display = 'block';
+      area.innerHTML = `
+        <h3>Microassessment — ${sessions[currentSessionIndex].microtopic}</h3>
+        <textarea id="user-answer" rows="5" style="width:100%; margin:10px 0;" placeholder="What were the key takeaways? How will you apply them?"></textarea>
+        <button onclick="submitAssessment()">Submit Reflection</button>
+        <p id="feedback" style="margin-top:15px; color:#28a745;"></p>
+      `;
+    }
+
+    function submitAssessment() {
+      document.getElementById('feedback').innerHTML = '✅ Reflection saved.';
     }
 
     function speakToApp() {
-      const query = prompt("Ask anything:");
-      if (query) alert("AI Coach: " + query);
+      const query = prompt("Ask the coach anything about the current pillar:");
+      if (query) alert("AI Coach would provide a targeted recap here.");
     }
 
     function switchPillar() {
       const selected = document.getElementById('pillar-select').value;
       loadSessions(selected);
     }
+
+    window.addEventListener('beforeunload', () => {
+      if (currentSessionIndex !== null) saveProgress(sessions[currentSessionIndex].id);
+    });
 
     window.onload = () => loadSessions("Pillar 1 — Mental & Emotional Wellness");
   </script>
