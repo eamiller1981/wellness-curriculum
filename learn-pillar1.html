@@ -59,17 +59,23 @@
       text-align: right;
     }
 
-    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; min-height: 200px; }
-    .ai-lesson-btn { 
-      background: #007bff; 
-      color: white; 
-      border: none; 
-      padding: 14px; 
-      border-radius: 6px; 
-      width: 100%; 
-      margin-top: 10px; 
-      cursor: pointer; 
+    #player-container { margin: 25px 0; background: #000; border-radius: 8px; overflow: hidden; min-height: 220px; position: relative; }
+    .ai-player {
+      padding: 20px;
+      text-align: center;
+      color: white;
+      background: #1a1a1a;
     }
+    .ai-lesson-btn, .ai-control-btn {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      margin: 8px;
+      cursor: pointer;
+    }
+    .ai-control-btn { background: #28a745; }
   </style>
 </head>
 <body>
@@ -96,9 +102,12 @@
     
     <div id="player-container">
       <div id="youtube-player"></div>
-      <button id="ai-lesson-btn" class="ai-lesson-btn" onclick="playAILesson()" style="display:none;">
-        ▶️ Play AI-Generated Audio Lesson
-      </button>
+      <div id="ai-player" class="ai-player" style="display:none;">
+        <p><strong>AI-Generated Audio Lesson</strong></p>
+        <p id="ai-title" style="font-size:0.9em; margin:10px 0;"></p>
+        <button id="ai-play-btn" class="ai-lesson-btn" onclick="toggleAIPlayback()">▶️ Play Audio Lesson</button>
+        <button id="ai-pause-btn" class="ai-control-btn" onclick="pauseAIPlayback()" style="display:none;">⏸️ Pause</button>
+      </div>
     </div>
 
     <button id="complete-btn" onclick="completeSession()" style="display:none; background:#28a745; color:white; border:none; padding:12px 20px; border-radius:6px; font-weight:bold;">
@@ -112,6 +121,7 @@
     let sessions = [];
     let currentSessionIndex = null;
     let player = null;
+    let aiUtterance = null;   // For Web Speech API
 
     const pillarObjectives = {
       "Pillar 1 — Mental & Emotional Wellness": "Upon completing this module, you will understand stress physiology, nervous system regulation, emotional resilience tools, and how to build cognitive and mood foundations for daily life.",
@@ -135,14 +145,13 @@
 
           return {
             id: sessionId,
-            microtopic: p.Microtopic?.title?.[0]?.plain_text || 
-                        p.Name?.title?.[0]?.plain_text || 
-                        "Untitled",
+            microtopic: p.Microtopic?.title?.[0]?.plain_text || p.Name?.title?.[0]?.plain_text || "Untitled",
             sessionTitle: p["Session Title"]?.rich_text?.[0]?.plain_text || "",
             source: p.Source?.rich_text?.[0]?.plain_text || "",
             youtubeURL: p["YouTube URL"]?.url || "",
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
             isAI: !p["YouTube URL"]?.url || p["YouTube URL"]?.url === "",
+            aiContent: p["AI Content"]?.rich_text?.[0]?.plain_text || "This is a synthesized lesson based on approved sources. In production this would be spoken aloud.",
             completed: false,
             lastPosition: parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0,
             duration: parseFloat(p["Duration (min)"]?.number) || 25
@@ -152,7 +161,6 @@
         renderSessions();
       } catch (err) {
         listEl.innerHTML = `<p style="color:red;">Load error: ${err.message}</p>`;
-        console.error(err);
       }
     }
 
@@ -189,20 +197,20 @@
 
       document.getElementById('complete-btn').style.display = 'none';
       document.getElementById('assessment-area').style.display = 'none';
-      document.getElementById('ai-lesson-btn').style.display = s.isAI ? 'block' : 'none';
+
+      // Show AI player or YouTube player
+      document.getElementById('ai-lesson-btn').style.display = 'none';
+      document.getElementById('ai-player').style.display = s.isAI ? 'block' : 'none';
+      document.getElementById('youtube-player').style.display = s.isAI ? 'none' : 'block';
 
       if (player) player.destroy();
-      document.getElementById('youtube-player').innerHTML = '';
 
       if (s.isAI) {
-        document.getElementById('youtube-player').innerHTML = `
-          <div style="padding:80px 20px; text-align:center; color:#555; background:#f8f9fa; border-radius:8px;">
-            <p><strong>AI-Generated Audio Lesson</strong></p>
-            <p style="font-size:0.9em;">${s.microtopic}</p>
-          </div>`;
+        document.getElementById('ai-title').textContent = s.microtopic;
         return;
       }
 
+      // YouTube player
       const videoId = s.youtubeURL.includes('v=') 
         ? s.youtubeURL.split('v=')[1].split('&')[0] 
         : s.youtubeURL.split('/').pop().split('?')[0];
@@ -225,16 +233,45 @@
       });
     }
 
+    // AI Playback using Web Speech API
     function playAILesson() {
       if (currentSessionIndex === null) return;
       const s = sessions[currentSessionIndex];
-      alert(`🎧 Playing AI Audio Lesson:\n\n${s.microtopic}\n\n(This is a simulation — real TTS coming soon.)`);
+
+      if ('speechSynthesis' in window) {
+        if (aiUtterance) speechSynthesis.cancel();
+
+        aiUtterance = new SpeechSynthesisUtterance(s.aiContent || "This is a synthesized wellness lesson based on approved sources.");
+        aiUtterance.rate = 0.95;
+        aiUtterance.pitch = 1.0;
+        aiUtterance.volume = 0.9;
+
+        speechSynthesis.speak(aiUtterance);
+        document.getElementById('ai-lesson-btn').style.display = 'none';
+        document.getElementById('ai-pause-btn').style.display = 'inline-block';
+      } else {
+        alert("Your browser does not support text-to-speech. This would be real audio in production.");
+      }
     }
 
-    function startProgressTracking(sessionId) {
-      console.log("Progress tracking started for", sessionId);
+    function pauseAIPlayback() {
+      if ('speechSynthesis' in window) {
+        speechSynthesis.cancel();
+        document.getElementById('ai-lesson-btn').style.display = 'block';
+        document.getElementById('ai-pause-btn').style.display = 'none';
+      }
     }
 
+    function toggleAIPlayback() {
+      if (aiUtterance && speechSynthesis.speaking) {
+        pauseAIPlayback();
+      } else {
+        playAILesson();
+      }
+    }
+
+    // Progress functions (YouTube only)
+    function startProgressTracking(sessionId) { console.log("Tracking progress"); }
     function saveProgress(sessionId) {
       if (!player || !sessionId) return;
       const currentTime = player.getCurrentTime();
@@ -263,7 +300,7 @@
 
     function speakToApp() {
       const query = prompt("Ask the coach anything:");
-      if (query) alert("AI Coach would reply here.");
+      if (query) alert("AI Coach would reply here with a synthesized recap.");
     }
 
     function switchPillar() {
