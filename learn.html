@@ -126,7 +126,7 @@
     let sessions = [];
     let currentSessionIndex = null;
     let player = null;
-    let aiAudio = null; // For on-demand TTS audio
+    let aiUtterance = null;
 
     const pillarObjectives = {
       "Pillar 1 — Mental & Emotional Wellness": "Upon completing this module, you will understand stress physiology, nervous system regulation, emotional resilience tools, and how to build cognitive and mood foundations for daily life.",
@@ -156,8 +156,8 @@
             youtubeURL: p["YouTube URL"]?.url || "",
             keyTakeaways: p["Key Takeaways"]?.rich_text?.[0]?.plain_text || "",
             isAI: !p["YouTube URL"]?.url || p["YouTube URL"]?.url === "",
-            aiContent: p["AI Content"]?.rich_text?.[0]?.plain_text || "",
-            audioURL: p["Audio URL"]?.url || "", // Pre-generated MP3
+            aiContent: p["AI Content"]?.rich_text?.[0]?.plain_text || "This is a calm wellness lesson based on approved sources.",
+            audioURL: p["Audio URL"]?.url || "",
             completed: false,
             lastPosition: parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0,
             duration: parseFloat(p["Duration (min)"]?.number) || 25
@@ -244,15 +244,14 @@
       const s = sessions[currentSessionIndex];
 
       if (s.audioURL) {
-        // Play pre-generated MP3
         const audio = new Audio(s.audioURL);
         audio.play();
         return;
       }
 
-      // On-demand TTS via your worker
+      // Call worker (for logging / future real TTS)
       try {
-        const res = await fetch('https://wellness-curriculum.eamiller1981.workers.dev/tts', {
+        await fetch('https://wellness-curriculum.eamiller1981.workers.dev/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -260,27 +259,41 @@
             voice: "calm-female"
           })
         });
+      } catch (e) {
+        console.log("TTS worker call failed, falling back to browser TTS");
+      }
 
-        const result = await res.json();
-        alert("TTS request sent to worker.\n\n" + JSON.stringify(result, null, 2));
-        // In the next version we'll play the actual audio returned from the worker
-      } catch (err) {
-        alert("Error calling TTS endpoint: " + err.message);
+      // Play calm female wellness voice using browser TTS
+      if ('speechSynthesis' in window) {
+        if (aiUtterance) speechSynthesis.cancel();
+
+        aiUtterance = new SpeechSynthesisUtterance(s.aiContent || "This is a calm wellness lesson based on approved sources.");
+        aiUtterance.rate = 0.92;   // Slower, meditative pace
+        aiUtterance.pitch = 1.08;  // Slightly higher for natural female voice
+        aiUtterance.volume = 0.95;
+
+        speechSynthesis.speak(aiUtterance);
+
+        document.getElementById('ai-play-btn').style.display = 'none';
+        const pauseBtn = document.createElement('button');
+        pauseBtn.className = 'ai-control-btn';
+        pauseBtn.textContent = '⏸️ Pause';
+        pauseBtn.onclick = () => {
+          speechSynthesis.cancel();
+          document.getElementById('ai-play-btn').style.display = 'block';
+          pauseBtn.remove();
+        };
+        document.getElementById('ai-player').appendChild(pauseBtn);
+      } else {
+        alert("Your browser does not support text-to-speech.");
       }
     }
 
     function pauseAIPlayback() {
-      // Placeholder for now
-    }
-
-    function startProgressTracking(sessionId) {
-      console.log("Progress tracking started");
-    }
-
-    function saveProgress(sessionId) {
-      if (!player || !sessionId) return;
-      const currentTime = player.getCurrentTime();
-      localStorage.setItem(`progress_${sessionId}`, currentTime);
+      if ('speechSynthesis' in window) speechSynthesis.cancel();
+      document.getElementById('ai-play-btn').style.display = 'block';
+      const pauseBtn = document.querySelector('.ai-control-btn');
+      if (pauseBtn) pauseBtn.remove();
     }
 
     function completeSession() {
