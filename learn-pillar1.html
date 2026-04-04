@@ -78,7 +78,7 @@
     
     <select id="pillar-select" onchange="switchPillar()" style="width:100%; padding:10px; margin-bottom:15px; border-radius:6px; font-size:15px;">
       <option value="Pillar 1 — Mental & Emotional Wellness">Pillar 1 — Mental & Emotional Wellness</option>
-      <option value="Pillar 2 — Sleep, Recovery & Circadian Regulation">Pillar 2 — Sleep, Recovery & Circadian Regulation</option>
+      <option value="Pillar 2 — Sleep / Recovery & Circadian Regulation">Pillar 2 — Sleep / Recovery & Circadian Regulation</option>
     </select>
 
     <div id="pillar-objective" style="margin-bottom:20px; font-size:0.95em; line-height:1.5; color:#444;"></div>
@@ -115,7 +115,7 @@
 
     const pillarObjectives = {
       "Pillar 1 — Mental & Emotional Wellness": "Upon completing this module, you will understand stress physiology, nervous system regulation, emotional resilience tools, and how to build cognitive and mood foundations for daily life.",
-      "Pillar 2 — Sleep, Recovery & Circadian Regulation": "Upon completing this module, you will understand sleep architecture, circadian biology, practical sleep optimization, and how to build effective recovery systems."
+      "Pillar 2 — Sleep / Recovery & Circadian Regulation": "Upon completing this module, you will understand sleep architecture, circadian biology, practical sleep optimization, and how to build effective recovery systems."
     };
 
     async function loadSessions(pillar) {
@@ -145,7 +145,7 @@
             isAI: !p["YouTube URL"]?.url || p["YouTube URL"]?.url === "",
             completed: false,
             lastPosition: parseFloat(localStorage.getItem(`progress_${sessionId}`)) || 0,
-            duration: parseFloat(p["Duration (min)"]?.number) || 0   // ← Reads directly from Notion
+            duration: parseFloat(p["Duration (min)"]?.number) || 25
           };
         });
 
@@ -161,8 +161,7 @@
       container.innerHTML = sessions.map((s, i) => {
         const percent = s.duration ? Math.round((s.lastPosition / s.duration) * 100) : 0;
         const durationDisplay = s.duration ? 
-          (s.duration > 60 ? `${Math.floor(s.duration/60)}h ${s.duration % 60} min` : `${s.duration} min`) : 
-          (s.isAI ? "25 min" : "— min");
+          (s.duration >= 60 ? `${Math.floor(s.duration/60)}h ${s.duration % 60} min` : `${s.duration} min`) : "— min";
 
         return `
           <div class="session-card ${s.completed ? 'completed' : ''}" onclick="loadSession(${i})">
@@ -197,7 +196,7 @@
 
       if (s.isAI) {
         document.getElementById('youtube-player').innerHTML = `
-          <div style="padding:60px 20px; text-align:center; color:#666; background:#f8f9fa; border-radius:8px;">
+          <div style="padding:80px 20px; text-align:center; color:#555; background:#f8f9fa; border-radius:8px;">
             <p><strong>AI-Generated Audio Lesson</strong></p>
             <p style="font-size:0.9em;">${s.microtopic}</p>
           </div>`;
@@ -229,7 +228,7 @@
     function playAILesson() {
       if (currentSessionIndex === null) return;
       const s = sessions[currentSessionIndex];
-      alert(`🎧 Playing AI Audio Lesson:\n\n${s.microtopic}\n\n(This is a simulation — real TTS integration coming soon.)`);
+      alert(`🎧 Playing AI Audio Lesson:\n\n${s.microtopic}\n\n(This is a simulation — real TTS coming soon.)`);
     }
 
     function startProgressTracking(sessionId) {
